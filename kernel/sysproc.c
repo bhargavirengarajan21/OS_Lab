@@ -6,6 +6,13 @@
 #include "spinlock.h"
 #include "proc.h"
 
+uint64 sys_hello(void) {
+  int n;
+  argint(0, &n);
+  print_hello(n);
+  return 0;
+} 
+
 uint64
 sys_exit(void)
 {

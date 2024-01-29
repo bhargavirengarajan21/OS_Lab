@@ -29,6 +29,11 @@ struct spinlock wait_lock;
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
+
+void print_hello(int n) {
+  printf("Hello from the kernel space %d\n", n);
+}
+
 void
 proc_mapstacks(pagetable_t kpgtbl)
 {
