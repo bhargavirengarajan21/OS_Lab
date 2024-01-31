@@ -13,6 +13,20 @@ uint64 sys_hello(void) {
   return 0;
 } 
 
+uint64 sys_info(void) {
+  int n;
+  argint(0, &n);
+
+  return print_info(n);
+}
+
+
+uint64 sys_procinfo(void) {
+  uint64 num;
+  argaddr(0, &num);
+  return print_sysproc(num);
+}
+
 uint64
 sys_exit(void)
 {

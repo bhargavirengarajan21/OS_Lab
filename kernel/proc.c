@@ -5,6 +5,8 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "stddef.h"
+#include "stdint.h"
 
 struct cpu cpus[NCPU];
 
@@ -16,6 +18,7 @@ int nextpid = 1;
 struct spinlock pid_lock;
 
 extern void forkret(void);
+extern int freepages(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
@@ -32,6 +35,25 @@ struct spinlock wait_lock;
 
 void print_hello(int n) {
   printf("Hello from the kernel space %d\n", n);
+}
+
+int print_info(int n) {
+  if(n == 0) {
+    struct proc *p;
+    int count = 0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == UNUSED) {
+        count++;
+      } else {
+        release(&p->lock);
+      }
+      return count;
+    }
+  }
+  else if(n == 1) {return (callcount-1);}
+  else if(n == 2) {return freepages();}
+  return -1;
 }
 
 void
@@ -115,7 +137,7 @@ static struct proc*
 allocproc(void)
 {
   struct proc *p;
-
+  callperprocess = 0;
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
@@ -685,4 +707,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int print_sysproc(uint64 num) {
+  struct proc *current_proc = myproc();
+  struct pinfo info;
+  acquire(&wait_lock);
+  int parent_pid = (current_proc->parent) ? current_proc->parent->pid : -1;
+  release(&wait_lock);
+  info.ppid = parent_pid;
+  info.syscall_count = callperprocess -1;
+  info.page_usage = current_proc->sz / PGSIZE;
+
+  return copyout(current_proc->pagetable, num, (char*)&info, sizeof(struct pinfo));
 }
