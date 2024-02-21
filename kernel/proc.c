@@ -6,9 +6,13 @@
 #include "proc.h"
 #include "defs.h"
 #include "stddef.h"
+#include "rand.h"
 #include "stdint.h"
 
 struct cpu cpus[NCPU];
+
+int ticks_list[NPROC];
+int prog1id, prog2id, prog3id, program_flag=0;
 
 struct proc proc[NPROC];
 
@@ -35,6 +39,48 @@ struct spinlock wait_lock;
 
 void print_hello(int n) {
   printf("Hello from the kernel space %d\n", n);
+}
+
+void print_scheduling_statistics() {
+
+  if(program_flag == 1) {
+    printf("Prog 1 ticks - %d\n", ticks_list[prog1id]);
+    printf("Prog 2 ticks - %d\n", ticks_list[prog2id]);
+    printf("Prog 3 ticks - %d\n", ticks_list[prog3id]);
+    printf("Total ticks - %d\n", (ticks_list[prog1id]+ticks_list[prog2id]+ticks_list[prog3id]));
+    program_flag=0;
+  }
+}
+
+void print_scheduling_tickets(int n) {
+  struct proc *p = myproc();
+  p->tickets=n;
+  p->stride=10000/n;
+  p->pass = p->stride;
+  ticks_list[p->pid] = 0;
+  switch(n) {
+    case 30:
+      #ifdef LOTTERY
+        printf("Prog 1 passes - %d\n", p->pass);
+      #endif
+      prog1id=p->pid;
+      program_flag=1;
+    break;
+    case 20:
+      #ifdef STRIDE
+        printf("Prog 2 passes - %d\n", p->pass);
+      #endif
+      prog2id=p->pid;
+      program_flag=1;
+    break;
+    case 10:
+      #ifdef Default
+      printf("prog 3 passes - %d\n",p->pass);
+      #endif
+      prog3id=p->pid;
+      program_flag=1;
+    break;
+  }
 }
 
 int print_info(int n) {
@@ -136,11 +182,16 @@ allocpid()
 static struct proc*
 allocproc(void)
 {
+  int stride_constant = 10000;
   struct proc *p;
   callperprocess = 0;
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state == UNUSED) {
+      p->schedule_count = 0;
+      p->tickets = 100;
+      p->stride = (stride_constant/p->tickets);
+      p->pass = p->stride;
       goto found;
     } else {
       release(&p->lock);
@@ -471,30 +522,88 @@ wait(uint64 addr)
 void
 scheduler(void)
 {
-  struct proc *p;
-  struct cpu *c = mycpu();
-  
+  struct cpu * c = mycpu();
   c->proc = 0;
-  for(;;){
-    // Avoid deadlock by ensuring that devices can interrupt.
+  for(;;) {
     intr_on();
-
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
+    #ifdef LOTTERY
+      struct proc * p;
+      int overall_tickets = 0;
+      for(p=proc;p<&proc[NPROC];p++) {
+        if(p->state == RUNNABLE) {
+          overall_tickets += p->tickets;
+        }
       }
-      release(&p->lock);
+
+      int lottery_winner = rand(overall_tickets);
+      int temp = 0;
+
+      for(p=proc;p<&proc[NPROC];p++) {
+        if(p->state == RUNNABLE) {
+            temp+= p->tickets;
+            if(temp>lottery_winner) {
+              acquire(&p->lock);
+              p->state = RUNNING;
+              c->proc = p;
+              ticks_list[p->pid] += 1;
+              printf("%d",ticks_list[p->pid]);
+              swtch(&c->context, &p->context);
+
+              c->proc = 0;
+              release(&p->lock);
+
+              break;
+            }
+        }
+      }
+    #endif
+    #ifdef STRIDE
+    struct proc *p, *current_proc;
+    int minPass = 1;
+    for(p=proc;p<&proc[NPROC];p++) {
+      if(p->state == RUNNABLE && (p->pass <= minPass || minPass < 0)) {
+        minPass = p->pass;
+        current_proc = p;
+      }
     }
+
+    for(p=proc; p<&proc[NPROC];p++) {
+      if(p->state != RUNNABLE) {
+        continue;
+      }
+
+      if(p->pass == minPass) {
+        acquire(&p->lock);
+        current_proc=p;
+        c->proc=current_proc;
+        current_proc->pass += current_proc->stride;
+        current_proc->state=RUNNING;
+        ticks_list[current_proc->pid] += 1;
+        swtch(&c->context, &current_proc->context);
+        release(&p->lock);
+        break;
+      }
+    }
+    #endif
+    #ifdef Default
+      struct proc *p;
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          // Switch to chosen process.  It is the process's job
+          // to release its lock and then reacquire it
+          // before jumping back to us.
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+        release(&p->lock);
+      }
+    #endif
   }
 }
 

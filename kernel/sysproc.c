@@ -6,6 +6,21 @@
 #include "spinlock.h"
 #include "proc.h"
 
+uint64 sys_schedstatistics (void) {
+  int n,program_val;
+  argint(0, &n);
+  argint(1, &program_val);
+  print_scheduling_statistics(n, program_val);
+  return 0;
+}
+
+uint64 sys_schedtickets(void) {
+  int n;
+  argint(0, &n);
+  print_scheduling_tickets(n);
+  return 0;
+}
+
 uint64 sys_hello(void) {
   int n;
   argint(0, &n);

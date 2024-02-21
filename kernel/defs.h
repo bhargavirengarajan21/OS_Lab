@@ -110,6 +110,8 @@ void            procdump(void);
 void            print_hello(int);
 int             print_info(int);
 int             print_sysproc(uint64);
+void            print_scheduling_statistics();
+void            print_scheduling_tickets(int);
 
 extern int      callperprocess;
 extern uint64   callcount;
