@@ -11,9 +11,6 @@
 
 struct cpu cpus[NCPU];
 
-int ticks_list[NPROC];
-int prog1id, prog2id, prog3id, program_flag=0;
-
 struct proc proc[NPROC];
 
 struct proc *initproc;
