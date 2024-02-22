@@ -546,10 +546,10 @@ scheduler(void)
         release(&p->lock);
       }
 
-      if(min_proc != 0 && min_proc != c->prod) {
+      if(min_proc != 0 && min_proc != c->proc) {
         acquire(&min_proc->lock);
         min_proc->state = RUNNING;
-        min_proc->pass += min_pass_proc->stride;
+        min_proc->pass += min_proc->stride;
         min_proc->schedule_count++;
         c->proc = min_proc;
         swtch(&c->context, &min_proc->context);
