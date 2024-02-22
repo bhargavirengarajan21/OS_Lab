@@ -1,1 +1,1 @@
-unsigned short rand(int upperbound);
+unsigned short rand();

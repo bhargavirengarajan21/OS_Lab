@@ -10,7 +10,7 @@ uint64 sys_schedstatistics (void) {
   int n,program_val;
   argint(0, &n);
   argint(1, &program_val);
-  print_scheduling_statistics(n, program_val);
+  print_scheduling_statistics();
   return 0;
 }
 

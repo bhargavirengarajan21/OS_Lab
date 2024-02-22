@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
         int n_tickets = atoi(argv[3+i]);
         ret = fork();
         if (ret == 0) { // child process
-            schedstatistics(n_tickets);
+            schedtickets(n_tickets);
             while(1);
         }
         else { // parent

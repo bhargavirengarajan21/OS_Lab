@@ -27,7 +27,7 @@ int hello(int);
 int info(int);
 int print_sysproc(uint64);
 int procinfo(struct pinfo*);
-int schedstatistics();
+int schedstatistics(void);
 int schedtickets(int);
 
 // ulib.c

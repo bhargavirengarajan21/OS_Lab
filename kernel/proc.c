@@ -42,14 +42,17 @@ void print_hello(int n) {
 }
 
 void print_scheduling_statistics() {
-
-  if(program_flag == 1) {
-    printf("Prog 1 ticks - %d\n", ticks_list[prog1id]);
-    printf("Prog 2 ticks - %d\n", ticks_list[prog2id]);
-    printf("Prog 3 ticks - %d\n", ticks_list[prog3id]);
-    printf("Total ticks - %d\n", (ticks_list[prog1id]+ticks_list[prog2id]+ticks_list[prog3id]));
-    program_flag=0;
+ struct proc * p;
+ for(p = proc; p < &proc[NPROC]; p++) {
+  acquire(&p->lock);
+  if(p->state != UNUSED) {
+    int pid = p->pid;
+    int tickets = p->tickets;
+    int ticks = p->schedule_count;
+    printf("%d(%s):tickets:%d:ticks%d\n",pid,p->name,tickets,ticks);
   }
+  release(&p->lock);
+ }
 }
 
 void print_scheduling_tickets(int n) {
@@ -57,30 +60,7 @@ void print_scheduling_tickets(int n) {
   p->tickets=n;
   p->stride=10000/n;
   p->pass = p->stride;
-  ticks_list[p->pid] = 0;
-  switch(n) {
-    case 30:
-      #ifdef LOTTERY
-        printf("Prog 1 passes - %d\n", p->pass);
-      #endif
-      prog1id=p->pid;
-      program_flag=1;
-    break;
-    case 20:
-      #ifdef STRIDE
-        printf("Prog 2 passes - %d\n", p->pass);
-      #endif
-      prog2id=p->pid;
-      program_flag=1;
-    break;
-    case 10:
-      #ifdef Default
-      printf("prog 3 passes - %d\n",p->pass);
-      #endif
-      prog3id=p->pid;
-      program_flag=1;
-    break;
-  }
+  p->schedule_count = 0;
 }
 
 int print_info(int n) {
@@ -523,70 +503,63 @@ void
 scheduler(void)
 {
   struct cpu * c = mycpu();
+  struct proc * p;
   c->proc = 0;
   for(;;) {
     intr_on();
-    #ifdef LOTTERY
-      struct proc * p;
-      int overall_tickets = 0;
-      for(p=proc;p<&proc[NPROC];p++) {
-        if(p->state == RUNNABLE) {
-          overall_tickets += p->tickets;
-        }
-      }
-
-      int lottery_winner = rand(overall_tickets);
-      int temp = 0;
-
-      for(p=proc;p<&proc[NPROC];p++) {
-        if(p->state == RUNNABLE) {
-            temp+= p->tickets;
-            if(temp>lottery_winner) {
-              acquire(&p->lock);
-              p->state = RUNNING;
-              c->proc = p;
-              ticks_list[p->pid] += 1;
-              printf("%d",ticks_list[p->pid]);
-              swtch(&c->context, &p->context);
-
-              c->proc = 0;
-              release(&p->lock);
-
-              break;
-            }
-        }
-      }
-    #endif
-    #ifdef STRIDE
-    struct proc *p, *current_proc;
-    int minPass = 1;
-    for(p=proc;p<&proc[NPROC];p++) {
-      if(p->state == RUNNABLE && (p->pass <= minPass || minPass < 0)) {
-        minPass = p->pass;
-        current_proc = p;
-      }
-    }
-
-    for(p=proc; p<&proc[NPROC];p++) {
-      if(p->state != RUNNABLE) {
-        continue;
-      }
-
-      if(p->pass == minPass) {
+    #if defined(LOTTERY)
+      int total_tickets = 0;
+      for(p = proc; p < &proc[NPROC]; p++) 
+        if(p->state == RUNNABLE) 
+          total_tickets += p->tickets;
+      unsigned short lottery_winning = (unsigned short) rand() % (unsigned short) total_tickets;
+      for(p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
-        current_proc=p;
-        c->proc=current_proc;
-        current_proc->pass += current_proc->stride;
-        current_proc->state=RUNNING;
-        ticks_list[current_proc->pid] += 1;
-        swtch(&c->context, &current_proc->context);
+
+        if(p->state != RUNNABLE) {
+          release(&p->lock);
+          continue;
+        }
+
+        if(lottery_winning < p->tickets) {
+          p->state = RUNNING;
+          p->schedule_count++;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          c->proc = 0;
+          release(&p->lock);
+          break;
+        }
+        lottery_winning -= p->tickets;
         release(&p->lock);
-        break;
       }
-    }
-    #endif
-    #ifdef Default
-      struct proc *p;
+    #elif defined(STRIDE)
+      int min_pass = 0x7FFFFFFF;
+      struct proc *min_proc = 0;
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+
+        if(p->state == RUNNABLE) {
+          if(p->pass < min_pass) {
+            min_pass = p->pass;
+            min_proc = p;
+          }
+        }
+
+        release(&p->lock);
+      }
+
+      if(min_proc != 0 && min_proc != c->prod) {
+        acquire(&min_proc->lock);
+        min_proc->state = RUNNING;
+        min_proc->pass += min_pass_proc->stride;
+        min_proc->schedule_count++;
+        c->proc = min_proc;
+        swtch(&c->context, &min_proc->context);
+        c->proc = 0;
+        release(&min_proc->lock);
+      }
+    #else
       for(p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
         if(p->state == RUNNABLE) {
