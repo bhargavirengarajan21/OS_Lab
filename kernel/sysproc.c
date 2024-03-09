@@ -21,6 +21,12 @@ uint64 sys_schedtickets(void) {
   return 0;
 }
 
+uint64 sys_clone(void) {
+  uint64 stack_ptr;
+  argaddr(0, &stack_ptr);
+  return clone((void*)stack_ptr);
+}
+
 uint64 sys_hello(void) {
   int n;
   argint(0, &n);

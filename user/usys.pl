@@ -36,6 +36,7 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+entry("clone");
 entry("hello");
 entry("info");
 entry("procinfo");

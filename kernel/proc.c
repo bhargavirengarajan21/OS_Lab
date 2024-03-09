@@ -9,6 +9,9 @@
 #include "rand.h"
 #include "stdint.h"
 
+int nextthread = 1;
+struct spinlock thread_lock;
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -98,7 +101,7 @@ void
 procinit(void)
 {
   struct proc *p;
-  
+  initlock(&thread_lock,"nextthreadid");
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -106,6 +109,15 @@ procinit(void)
       p->state = UNUSED;
       p->kstack = KSTACK((int) (p - proc));
   }
+}
+
+int allocthreadid() {
+  int thread_id;
+  acquire(&thread_lock);
+  thread_id = nextthread;
+  nextthread = nextthread + 1;
+  release(&thread_lock);
+  return thread_id;
 }
 
 // Must be called with interrupts disabled,
@@ -150,6 +162,36 @@ allocpid()
   release(&pid_lock);
 
   return pid;
+}
+
+static struct proc* allocthread(void) {
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state == UNUSED) {
+      goto found;
+    } else {
+      release(&p->lock);
+    }
+  }
+
+  return 0;
+
+  found:
+    p->pid = allocpid();
+    p->state = USED;
+    p->threadId = allocthreadid();
+
+    if((p->trapframe = (struct trapframe *)kalloc()) == 0) {
+      freeproc(p);
+      release(&p->lock);
+      return 0;
+    }
+    memset(&p->context, 0, sizeof(p->context));
+    p->context.ra = (uint64)forkret;
+    p->context.sp = p->kstack + PGSIZE;
+    return p;
 }
 
 // Look in the process table for an UNUSED proc.
@@ -213,8 +255,10 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->pagetable && p->threadId)
     proc_freepagetable(p->pagetable, p->sz);
+  else 
+    uvmunmap(p->pagetable, TRAPFRAME - PGSIZE * (p->threadId), 1, 0);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -224,6 +268,49 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->threadId = 0;
+}
+
+
+int clone(void *stack) {
+  struct proc *np;
+  struct proc *p = myproc();
+
+  if(stack == NULL) {
+    return -1;
+  }
+  if((np=allocthread()) == 0) {
+    return -1;
+  }
+  np->pagetable = p->pagetable;
+  if(mappages(np->pagetable, TRAPFRAME - (PGSIZE* np->threadId), PGSIZE, (uint64)(np->trapframe), PTE_R | PTE_W) < 0) {
+    uvmunmap(np->pagetable, TRAMPOLINE, 1, 0);
+    uvmfree(np->pagetable, 0);
+    return 0;
+  }
+  np->sz = p->sz;
+  *(np->trapframe) = *(p->trapframe);
+  np->trapframe->sp = (uint64)stack+ PGSIZE;
+  np->trapframe->a0 = 0;
+  for(int i = 0; i < NOFILE; i++) {
+    if(p->ofile[i]) {
+      np->ofile[i] = filedup(p->ofile[i]);
+    }
+  }
+
+  np->cwd = idup(p->cwd);
+  safestrcpy(np->name, p->name, sizeof(np->name));
+  int thread_id = np->threadId;
+  release(&np->lock);
+  acquire(&wait_lock);
+  np->parent = 0;
+  release(&wait_lock);
+  np->parent = 0;
+  release(&wait_lock);
+  acquire(&np->lock);
+  np->state = RUNNABLE;
+  release(&np->lock);
+  return thread_id;
 }
 
 // Create a user page table for a given process, with no user memory,

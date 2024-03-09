@@ -1,35 +1,28 @@
-
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "user/user.h"
-#define MAX_PROC 10
-int main(int argc, char *argv[])
+#include "user/thread.h"
+struct lock_t lock;
+int n_threads, n_passes, cur_turn, cur_pass;
+void* thread_fn(void *arg)
 {
-    int sleep_ticks, n_proc, ret, proc_pid[MAX_PROC];
-    if (argc < 4) {
-        printf("Usage: %s [SLEEP] [N_PROC] [TICKET1] [TICKET2]...\n", argv[0]);
-        exit(-1);
-    }
-    sleep_ticks = atoi(argv[1]);
-    n_proc = atoi(argv[2]);
-    if (n_proc > MAX_PROC) {
-        printf("Cannot test with more than %d processes\n", MAX_PROC);
-        exit(-1);
-    }
-    for (int i = 0; i < n_proc; i++) {
-        int n_tickets = atoi(argv[3+i]);
-        ret = fork();
-        if (ret == 0) { // child process
-            schedtickets(n_tickets);
-            while(1);
+    int thread_id = (uint64)arg;
+    int done = 0;
+    while (!done) {
+        lock_acquire(&lock);
+        if (cur_pass >= n_passes) done = 1;
+        else if (cur_turn == thread_id) {
+            cur_turn = (cur_turn + 1) % n_threads;
+            printf("Round %d: thread %d is passing the token to thread %d\n",++cur_pass, thread_id, cur_turn);
         }
-        else { // parent
-            proc_pid[i] = ret;
-            continue;
-        }
+        lock_release(&lock);
+        sleep(0);
     }
-    sleep(sleep_ticks);
-    schedstatistics();
-    for (int i = 0; i < n_proc; i++) kill(proc_pid[i]);
-    exit(0);
+    return 0;
+}
+int main(int argc, char *argv[]) {
+    if (argc < 3) {
+        printf("Usage: %s [N_PASSES] [N_THREADS]\n", argv[0]);
+    }
+    exit(-1);
 }

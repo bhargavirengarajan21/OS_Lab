@@ -23,6 +23,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int clone(void *stack);
 int hello(int);
 int info(int);
 int print_sysproc(uint64);
